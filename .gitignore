@@ -1,0 +1,50 @@
+# ---- Terraform ----
+**/.terraform/*
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+*.tfvars
+!*.tfvars.example
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+tfplan
+*.tfplan
+
+# ---- Kubernetes / local ----
+kubeconfig
+*.kubeconfig
+.kube/
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+
+# ---- Node / misc ----
+node_modules/
+
+# ---- OS / editor ----
+.DS_Store
+Thumbs.db
+.idea/
+*.swp
+*.swo
+
+# ---- Secrets (never commit) ----
+*.env
+.env
+.env.*
+secrets.yaml
+*secret*.yaml
+!**/example*secret*.yaml

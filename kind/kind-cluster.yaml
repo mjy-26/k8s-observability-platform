@@ -1,0 +1,32 @@
+# kind cluster: 1 control-plane + 2 workers.
+# Docs: https://kind.sigs.k8s.io/docs/user/configuration/
+#
+# Node image is pinned for reproducibility. Bump this + the README version
+# table together when you upgrade Kubernetes.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: obs-platform
+nodes:
+  - role: control-plane
+    image: kindest/node:v1.30.0
+    # extraPortMappings let us reach NodePort services from the host (macOS).
+    # We expose Grafana (30300) and Argo CD (30080) without kubectl port-forward.
+    extraPortMappings:
+      - containerPort: 30300   # Grafana  -> http://localhost:30300
+        hostPort: 30300
+        protocol: TCP
+      - containerPort: 30080   # Argo CD  -> http://localhost:30080
+        hostPort: 30080
+        protocol: TCP
+      - containerPort: 30900   # Prometheus -> http://localhost:30900
+        hostPort: 30900
+        protocol: TCP
+      - containerPort: 30093   # Alertmanager -> http://localhost:30093
+        hostPort: 30093
+        protocol: TCP
+    labels:
+      ingress-ready: "true"
+  - role: worker
+    image: kindest/node:v1.30.0
+  - role: worker
+    image: kindest/node:v1.30.0
