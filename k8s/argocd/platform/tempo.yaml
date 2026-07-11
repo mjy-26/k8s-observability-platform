@@ -1,0 +1,30 @@
+# OPTIONAL: Tempo managed by Argo CD (see platform/README.md).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tempo
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  sources:
+    - repoURL: https://grafana.github.io/helm-charts
+      chart: tempo
+      targetRevision: 1.10.3
+      helm:
+        releaseName: tempo
+        valueFiles:
+          - $values/terraform/values/tempo.yaml
+    - repoURL: https://github.com/mjy-26/k8s-observability-platform.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

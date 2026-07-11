@@ -1,0 +1,30 @@
+# OPTIONAL: Loki + Promtail managed by Argo CD (see platform/README.md).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: loki-stack
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  sources:
+    - repoURL: https://grafana.github.io/helm-charts
+      chart: loki-stack
+      targetRevision: 2.10.2
+      helm:
+        releaseName: loki
+        valueFiles:
+          - $values/terraform/values/loki-stack.yaml
+    - repoURL: https://github.com/mjy-26/k8s-observability-platform.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

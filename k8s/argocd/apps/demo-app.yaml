@@ -1,0 +1,24 @@
+# GitOps-managed workload: the instrumented demo microservice.
+# Argo CD renders k8s/demo-app (kustomize) and keeps it in sync with Git.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: demo-service
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/mjy-26/k8s-observability-platform.git
+    targetRevision: main
+    path: k8s/demo-app
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: demo
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

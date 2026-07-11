@@ -1,0 +1,54 @@
+# Dummy Alertmanager webhook receiver: logs every alert payload it receives.
+# Alertmanager (see terraform values) POSTs firing/resolved alerts here. In a
+# real setup you'd swap this for Slack/PagerDuty/Opsgenie receivers.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: webhook-logger
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: webhook-logger
+    app.kubernetes.io/part-of: obs-platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: webhook-logger
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: webhook-logger
+    spec:
+      containers:
+        - name: echo
+          # Logs full request bodies to stdout -> also visible in Loki.
+          image: mendhak/http-https-echo:31
+          env:
+            - name: HTTP_PORT
+              value: "8080"
+          ports:
+            - name: http
+              containerPort: 8080
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: webhook-logger
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: webhook-logger
+    app.kubernetes.io/part-of: obs-platform
+spec:
+  selector:
+    app.kubernetes.io/name: webhook-logger
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

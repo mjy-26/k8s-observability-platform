@@ -1,0 +1,38 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Everything observability-*config* (as opposed to platform install) lives here
+# and is owned by Argo CD (GitOps). Kept separate from k8s/demo-app so the app
+# and its monitoring config can evolve independently.
+#
+# NOTE: this references the canonical dashboards/ and alerts/ dirs at the repo
+# root, so it must be built with `--load-restrictor LoadRestrictionsNone`
+# (the Makefile and Argo CD are configured to do this).
+namespace: monitoring
+
+resources:
+  - webhook-logger.yaml
+  - ../../alerts/slo-burn-rate.yaml
+
+# Grafana dashboards as code: each JSON becomes a ConfigMap labelled so the
+# Grafana sidecar auto-imports it into the "obs-platform" folder.
+configMapGenerator:
+  - name: grafana-dashboard-red-use
+    files:
+      - service-red.json=../../dashboards/service-red.json
+    options:
+      labels:
+        grafana_dashboard: "1"
+      annotations:
+        grafana_folder: obs-platform
+  - name: grafana-dashboard-slo
+    files:
+      - slo-error-budget.json=../../dashboards/slo-error-budget.json
+    options:
+      labels:
+        grafana_dashboard: "1"
+      annotations:
+        grafana_folder: obs-platform
+
+generatorOptions:
+  disableNameSuffixHash: true

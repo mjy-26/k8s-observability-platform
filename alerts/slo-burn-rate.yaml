@@ -1,0 +1,176 @@
+# ============================================================================
+# SLO-based, multi-window multi-burn-rate alerting (Google SRE Workbook style)
+#
+# SLOs for the demo service's /work endpoint (30-day window):
+#   * Availability : 99%   of requests succeed  -> 1% error budget
+#   * Latency      : 99%   of requests < 300ms   -> 1% "too slow" budget
+#
+# We alert on how fast the error budget is *burning*, not on raw error rate.
+# Two short/long window pairs per severity guard against both fast outages and
+# slow burns, while requiring the short window to also be hot (kills flapping).
+# ============================================================================
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: demo-service-slo
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+    app.kubernetes.io/part-of: obs-platform
+spec:
+  groups:
+    # ----------------------------------------------------------------------
+    # Recording rules: error-budget burn ratios over standard windows.
+    # burn ratio = (bad events / total events) / (1 - SLO)   [SLO target 0.99]
+    # ----------------------------------------------------------------------
+    - name: demo-service.sli.recording
+      interval: 30s
+      rules:
+        # ---- Availability: fraction of 5xx responses ----
+        - record: sli:work_availability_errors:ratio_rate5m
+          expr: |
+            sum(rate(http_requests_total{path="/work", status=~"5.."}[5m]))
+              /
+            sum(rate(http_requests_total{path="/work"}[5m]))
+        - record: sli:work_availability_errors:ratio_rate30m
+          expr: |
+            sum(rate(http_requests_total{path="/work", status=~"5.."}[30m]))
+              /
+            sum(rate(http_requests_total{path="/work"}[30m]))
+        - record: sli:work_availability_errors:ratio_rate1h
+          expr: |
+            sum(rate(http_requests_total{path="/work", status=~"5.."}[1h]))
+              /
+            sum(rate(http_requests_total{path="/work"}[1h]))
+        - record: sli:work_availability_errors:ratio_rate2h
+          expr: |
+            sum(rate(http_requests_total{path="/work", status=~"5.."}[2h]))
+              /
+            sum(rate(http_requests_total{path="/work"}[2h]))
+        - record: sli:work_availability_errors:ratio_rate6h
+          expr: |
+            sum(rate(http_requests_total{path="/work", status=~"5.."}[6h]))
+              /
+            sum(rate(http_requests_total{path="/work"}[6h]))
+        - record: sli:work_availability_errors:ratio_rate1d
+          expr: |
+            sum(rate(http_requests_total{path="/work", status=~"5.."}[1d]))
+              /
+            sum(rate(http_requests_total{path="/work"}[1d]))
+
+        # ---- Latency: fraction of requests SLOWER than the 300ms threshold ----
+        - record: sli:work_latency_errors:ratio_rate5m
+          expr: |
+            1 - (
+              sum(rate(http_request_duration_seconds_bucket{path="/work", le="0.3"}[5m]))
+                /
+              sum(rate(http_request_duration_seconds_count{path="/work"}[5m]))
+            )
+        - record: sli:work_latency_errors:ratio_rate1h
+          expr: |
+            1 - (
+              sum(rate(http_request_duration_seconds_bucket{path="/work", le="0.3"}[1h]))
+                /
+              sum(rate(http_request_duration_seconds_count{path="/work"}[1h]))
+            )
+        - record: sli:work_latency_errors:ratio_rate6h
+          expr: |
+            1 - (
+              sum(rate(http_request_duration_seconds_bucket{path="/work", le="0.3"}[6h]))
+                /
+              sum(rate(http_request_duration_seconds_count{path="/work"}[6h]))
+            )
+
+    # ----------------------------------------------------------------------
+    # Alerting rules
+    # ----------------------------------------------------------------------
+    - name: demo-service.slo.availability
+      rules:
+        - alert: DemoServiceErrorBudgetBurnFast
+          # 14.4x burn: exhausts 2% of the 30d budget in 1h. Page immediately.
+          expr: |
+            sli:work_availability_errors:ratio_rate1h > (14.4 * 0.01)
+            and
+            sli:work_availability_errors:ratio_rate5m > (14.4 * 0.01)
+          for: 2m
+          labels:
+            severity: critical
+            service: demo-service
+            slo: availability
+          annotations:
+            summary: "Fast error-budget burn on demo-service (availability)"
+            description: >
+              demo-service is burning its availability error budget at >14.4x.
+              At this rate the 30-day budget is gone within ~2 days. Current 1h
+              error ratio: {{ $value | humanizePercentage }}.
+            runbook_url: "https://github.com/mjy-26/k8s-observability-platform#troubleshooting"
+
+        - alert: DemoServiceErrorBudgetBurnSlow
+          # 6x burn over 6h/30m: slower outage, still page.
+          expr: |
+            sli:work_availability_errors:ratio_rate6h > (6 * 0.01)
+            and
+            sli:work_availability_errors:ratio_rate30m > (6 * 0.01)
+          for: 15m
+          labels:
+            severity: critical
+            service: demo-service
+            slo: availability
+          annotations:
+            summary: "Sustained error-budget burn on demo-service (availability)"
+            description: >
+              demo-service availability budget burning at >6x over 6h. Current
+              6h error ratio: {{ $value | humanizePercentage }}.
+            runbook_url: "https://github.com/mjy-26/k8s-observability-platform#troubleshooting"
+
+        - alert: DemoServiceErrorBudgetBurnTicket
+          # 3x burn over 1d/2h: open a ticket, no page.
+          expr: |
+            sli:work_availability_errors:ratio_rate1d > (3 * 0.01)
+            and
+            sli:work_availability_errors:ratio_rate2h > (3 * 0.01)
+          for: 1h
+          labels:
+            severity: warning
+            service: demo-service
+            slo: availability
+          annotations:
+            summary: "Elevated error-budget burn on demo-service (availability)"
+            description: >
+              demo-service availability budget burning at >3x over 1d. Current
+              1d error ratio: {{ $value | humanizePercentage }}.
+
+    - name: demo-service.slo.latency
+      rules:
+        - alert: DemoServiceLatencyBudgetBurnFast
+          expr: |
+            sli:work_latency_errors:ratio_rate1h > (14.4 * 0.01)
+            and
+            sli:work_latency_errors:ratio_rate5m > (14.4 * 0.01)
+          for: 2m
+          labels:
+            severity: critical
+            service: demo-service
+            slo: latency
+          annotations:
+            summary: "Fast latency-budget burn on demo-service (>1% over 300ms)"
+            description: >
+              Too many demo-service requests exceed the 300ms latency SLO.
+              Current 1h slow-request ratio: {{ $value | humanizePercentage }}.
+            runbook_url: "https://github.com/mjy-26/k8s-observability-platform#troubleshooting"
+
+        - alert: DemoServiceLatencyBudgetBurnSlow
+          expr: |
+            sli:work_latency_errors:ratio_rate6h > (6 * 0.01)
+            and
+            sli:work_latency_errors:ratio_rate1h > (6 * 0.01)
+          for: 15m
+          labels:
+            severity: warning
+            service: demo-service
+            slo: latency
+          annotations:
+            summary: "Sustained latency-budget burn on demo-service"
+            description: >
+              demo-service latency budget burning at >6x over 6h. Current 6h
+              slow-request ratio: {{ $value | humanizePercentage }}.

@@ -1,0 +1,25 @@
+# GitOps-managed observability CONFIG: Grafana dashboards (as ConfigMaps),
+# the SLO burn-rate PrometheusRule, and the Alertmanager webhook receiver.
+# Edit a dashboard JSON or an alert threshold, push, and Argo CD reconciles it.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: observability-config
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/mjy-26/k8s-observability-platform.git
+    targetRevision: main
+    path: k8s/config
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

@@ -1,0 +1,166 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Least-privilege by default; build-image escalates for GHCR.
+permissions:
+  contents: read
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/k8s-observability-platform-demo
+
+jobs:
+  # ---------------------------------------------------------------------------
+  lint-terraform:
+    name: Terraform fmt / validate / tflint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.5"
+
+      - name: terraform fmt
+        run: terraform -chdir=terraform fmt -check -recursive
+
+      - name: terraform init (no backend)
+        run: terraform -chdir=terraform init -backend=false
+
+      - name: terraform validate
+        run: terraform -chdir=terraform validate
+
+      - name: Setup tflint
+        uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: v0.52.0
+
+      - name: tflint
+        run: tflint --chdir=terraform --recursive
+
+  # ---------------------------------------------------------------------------
+  lint-manifests:
+    name: Kustomize / kubeconform / helm lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install kustomize + kubeconform
+        run: |
+          curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+          sudo mv kustomize /usr/local/bin/
+          curl -sL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar xz
+          sudo mv kubeconform /usr/local/bin/
+
+      - name: Validate demo-app manifests
+        run: kustomize build k8s/demo-app | kubeconform -strict -summary -ignore-missing-schemas
+
+      - name: Validate observability config (dashboards + alerts + receiver)
+        run: |
+          kustomize build --load-restrictor LoadRestrictionsNone k8s/config \
+            | kubeconform -strict -summary -ignore-missing-schemas
+
+      - name: Validate Argo CD Applications
+        run: kubeconform -strict -summary -ignore-missing-schemas k8s/argocd/root-app.yaml k8s/argocd/apps
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.15.2
+
+      - name: Helm template + lint kube-prometheus-stack values
+        run: |
+          helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+          helm repo update
+          helm template kps prometheus-community/kube-prometheus-stack \
+            --version 61.9.0 -n monitoring \
+            -f terraform/values/kube-prometheus-stack.yaml \
+            | kubeconform -summary -ignore-missing-schemas
+
+  # ---------------------------------------------------------------------------
+  build-image:
+    name: Build & push demo image to GHCR
+    runs-on: ubuntu-latest
+    needs: [lint-manifests]
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=sha
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./app
+          # Only push on main (not on PRs from forks that lack package perms).
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  # ---------------------------------------------------------------------------
+  smoke-test:
+    name: kind smoke test (cluster + Terraform + pods Ready)
+    runs-on: ubuntu-latest
+    needs: [lint-terraform, lint-manifests]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create kind cluster
+        uses: helm/kind-action@v1
+        with:
+          config: kind/kind-cluster.yaml
+          cluster_name: obs-platform
+          wait: 120s
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.5"
+
+      - name: Install kustomize
+        run: |
+          curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+          sudo mv kustomize /usr/local/bin/
+
+      - name: Build & load demo image into kind
+        run: |
+          docker build -t "${IMAGE}:ci" ./app
+          kind load docker-image "${IMAGE}:ci" --name obs-platform
+
+      # Keep CI light & reliable: provision just kube-prometheus-stack via
+      # Terraform (proves the IaC path + operator/CRDs), not the whole stack.
+      - name: Terraform apply (kube-prometheus-stack only)
+        run: |
+          terraform -chdir=terraform init -upgrade
+          terraform -chdir=terraform apply -auto-approve \
+            -target=helm_release.kube_prometheus_stack
+
+      - name: Deploy demo app
+        run: |
+          cd k8s/demo-app
+          kustomize edit set image "ghcr.io/mjy-26/k8s-observability-platform-demo=${IMAGE}:ci"
+          kustomize build . | kubectl apply -f -
+
+      - name: Smoke test — assert pods become Ready
+        env:
+          TIMEOUT: "420s"
+        run: ./scripts/smoke-test.sh

@@ -1,0 +1,22 @@
+# Tells the Prometheus Operator to scrape the demo service's /metrics endpoint.
+# Prometheus is configured (serviceMonitorSelectorNilUsesHelmValues=false) to
+# pick up ServiceMonitors in every namespace, so no extra release label needed.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: demo-service
+  labels:
+    app.kubernetes.io/name: demo-service
+    app.kubernetes.io/part-of: obs-platform
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: demo-service
+  namespaceSelector:
+    matchNames:
+      - demo
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
+      scrapeTimeout: 10s

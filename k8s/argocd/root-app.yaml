@@ -1,0 +1,34 @@
+# App-of-apps ROOT Application.
+#
+# Applying this single manifest points Argo CD at k8s/argocd/apps/, where each
+# file is itself an Argo CD Application. Argo CD then recursively creates and
+# continuously reconciles the child apps from Git — the "app-of-apps" pattern.
+#
+# Bootstrap once (after pushing the repo and setting your owner):
+#   make set-owner GH_USER=<you>   # rewrites the mjy-26 placeholder
+#   git add -A && git commit -m "set owner" && git push
+#   make argocd-bootstrap
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: root
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/mjy-26/k8s-observability-platform.git
+    targetRevision: main
+    path: k8s/argocd/apps
+    directory:
+      recurse: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
