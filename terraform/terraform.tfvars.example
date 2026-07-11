@@ -1,0 +1,12 @@
+# Copy to terraform.tfvars and edit, or pass with -var on the CLI.
+# (terraform.tfvars is gitignored; this .example file is safe to commit.)
+
+# Your GitHub username/org — drives the Argo CD repo URL and image references.
+gh_user = "mjy-26"
+
+# Override if your repo name/host differs from the default.
+# repo_url        = "https://github.com/mjy-26/k8s-observability-platform.git"
+# target_revision = "main"
+
+# kube_context   = "kind-obs-platform"
+# kubeconfig_path = "~/.kube/config"

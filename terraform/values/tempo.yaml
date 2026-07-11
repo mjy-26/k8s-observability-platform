@@ -1,0 +1,33 @@
+# ============================================================================
+# tempo values — single-binary distributed tracing backend
+# Docs: https://github.com/grafana/helm-charts/tree/main/charts/tempo
+# ============================================================================
+
+fullnameOverride: tempo
+
+tempo:
+  # Enable the OTLP receivers so the demo app can push OpenTelemetry spans.
+  # gRPC 4317 / HTTP 4318 are the standard OTLP ports.
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317
+        http:
+          endpoint: 0.0.0.0:4318
+  retention: 24h
+  storage:
+    trace:
+      backend: local
+      local:
+        path: /var/tempo/traces
+      wal:
+        path: /var/tempo/wal
+
+persistence:
+  enabled: false # ephemeral for local demo
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi

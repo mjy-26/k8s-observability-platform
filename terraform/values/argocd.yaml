@@ -1,0 +1,39 @@
+# ============================================================================
+# argo-cd values
+# Docs: https://github.com/argoproj/argo-helm/tree/main/charts/argo-cd
+# ============================================================================
+
+# Run the API/UI server in insecure (HTTP) mode so the kind NodePort works
+# without TLS termination. Fine for local; use TLS + ingress in real clusters.
+configs:
+  params:
+    server.insecure: true
+  cm:
+    # Allow Argo CD to render Helm-type Applications (used by optional platform
+    # app-of-apps under k8s/argocd/platform) and to build kustomizations that
+    # reference the repo-root dashboards/ and alerts/ dirs.
+    kustomize.buildOptions: "--enable-helm --load-restrictor LoadRestrictionsNone"
+
+server:
+  service:
+    type: NodePort
+    nodePortHttp: 30080
+
+# Trim resource footprint for local kind.
+controller:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+
+repoServer:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+
+dex:
+  enabled: false # no SSO needed locally
+
+notifications:
+  enabled: false

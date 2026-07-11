@@ -1,0 +1,127 @@
+# ============================================================================
+# kube-prometheus-stack values
+# Docs: https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack
+# ============================================================================
+
+fullnameOverride: kube-prometheus-stack
+
+# ---------------------------------------------------------------------------
+# Prometheus
+# ---------------------------------------------------------------------------
+prometheus:
+  service:
+    type: NodePort
+    nodePort: 30900
+  prometheusSpec:
+    # Discover ServiceMonitors/PrometheusRules from ALL namespaces regardless of
+    # Helm release labels — otherwise our demo app + SLO rules would be ignored.
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    probeSelectorNilUsesHelmValues: false
+    # Keep local footprint small.
+    retention: 6h
+    resources:
+      requests:
+        cpu: 100m
+        memory: 400Mi
+    # Local kind has no dynamic PV provisioner by default -> use emptyDir.
+    # (Data is ephemeral; fine for a demo. Documented in README.)
+
+# ---------------------------------------------------------------------------
+# Alertmanager — routes SLO burn-rate alerts to a local webhook receiver.
+# ---------------------------------------------------------------------------
+alertmanager:
+  service:
+    type: NodePort
+    nodePort: 30093
+  config:
+    global:
+      resolve_timeout: 5m
+    route:
+      receiver: "webhook-logger"
+      group_by: ["alertname", "service", "severity"]
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 1h
+      routes:
+        - matchers:
+            - severity = "critical"
+          receiver: "webhook-logger"
+          continue: true
+    receivers:
+      - name: "webhook-logger"
+        webhook_configs:
+          # Dummy local sink (deployed via k8s/config). Swap for Slack/PagerDuty
+          # by adding the relevant *_configs block here.
+          - url: "http://webhook-logger.monitoring.svc.cluster.local:8080/"
+            send_resolved: true
+
+# ---------------------------------------------------------------------------
+# Grafana — datasources as code, sidecar dashboard discovery.
+# ---------------------------------------------------------------------------
+grafana:
+  # NOTE: default admin password is "prom-operator". For real use, set via a
+  # pre-created secret (admin.existingSecret) — never hardcode here.
+  service:
+    type: NodePort
+    nodePort: 30300
+  # Discover dashboard ConfigMaps (label grafana_dashboard=1) in ALL namespaces.
+  sidecar:
+    dashboards:
+      enabled: true
+      searchNamespace: ALL
+      label: grafana_dashboard
+      folderAnnotation: grafana_folder
+      provider:
+        foldersFromFilesStructure: true
+    datasources:
+      enabled: true
+      searchNamespace: ALL
+
+  # Datasources declared as code. Prometheus is auto-added by the chart; here we
+  # add Loki (logs) and Tempo (traces) plus trace<->log<->metric correlation.
+  additionalDataSources:
+    - name: Loki
+      type: loki
+      uid: loki
+      access: proxy
+      url: http://loki.monitoring.svc.cluster.local:3100
+      jsonData:
+        # Link a log line to its trace in Tempo via the "trace_id" field.
+        derivedFields:
+          - name: TraceID
+            matcherRegex: '"trace_id":"(\w+)"'
+            url: "$${__value.raw}"
+            datasourceUid: tempo
+    - name: Tempo
+      type: tempo
+      uid: tempo
+      access: proxy
+      url: http://tempo.monitoring.svc.cluster.local:3100
+      jsonData:
+        # Jump from a trace span to correlated logs in Loki.
+        tracesToLogsV2:
+          datasourceUid: loki
+          spanStartTimeShift: "-1h"
+          spanEndTimeShift: "1h"
+          filterByTraceID: true
+          tags: [{ key: "service.name", value: "service" }]
+        # Jump from a trace to RED metrics.
+        tracesToMetrics:
+          datasourceUid: prometheus
+          tags: [{ key: "service.name", value: "service" }]
+        serviceMap:
+          datasourceUid: prometheus
+
+# ---------------------------------------------------------------------------
+# Trim components that add noise/failures on a local kind cluster.
+# ---------------------------------------------------------------------------
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeProxy:
+  enabled: false
+kubeEtcd:
+  enabled: false

@@ -1,0 +1,29 @@
+# ============================================================================
+# loki-stack values — Loki (log store) + Promtail (log shipper)
+# Docs: https://github.com/grafana/helm-charts/tree/main/charts/loki-stack
+# ============================================================================
+
+loki:
+  enabled: true
+  isDefault: false
+  persistence:
+    enabled: false # ephemeral for local demo
+  config:
+    limits_config:
+      retention_period: 24h
+      reject_old_samples: true
+      reject_old_samples_max_age: 168h
+
+promtail:
+  enabled: true
+  # Promtail tails all pod logs on each node and ships to the Loki service.
+  config:
+    clients:
+      - url: http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push
+
+# Loki-stack can bundle Grafana/Prometheus — we use kube-prometheus-stack's
+# instead, so disable these to avoid duplicates.
+grafana:
+  enabled: false
+prometheus:
+  enabled: false
