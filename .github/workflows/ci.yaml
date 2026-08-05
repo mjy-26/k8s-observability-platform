@@ -152,7 +152,8 @@ jobs:
         run: |
           terraform -chdir=terraform init -upgrade
           terraform -chdir=terraform apply -auto-approve \
-            -target=helm_release.kube_prometheus_stack
+            -target=helm_release.kube_prometheus_stack \
+            -target=kubernetes_namespace.demo
 
       - name: Deploy demo app
         run: |
