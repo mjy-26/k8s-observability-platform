@@ -13,6 +13,13 @@ Tempo, and Alertmanager, with dashboards-as-code, SLO burn-rate alerting, and an
 app-of-apps GitOps workflow. `make demo-load` generates traffic until the SLO
 alerts fire.
 
+> **Companion project:** This platform is the *detect* half of a detect→act SRE
+> loop. Its sibling,
+> [incident-auto-remediation](https://github.com/mjy-26/incident-auto-remediation),
+> receives this stack's Alertmanager webhooks and runs safe, allowlisted runbook
+> actions (restart pod, scale deployment) with dry-run and rate limiting — point
+> Alertmanager at its `/webhook` to close the loop and auto-remediate.
+
 ---
 
 ## Architecture
